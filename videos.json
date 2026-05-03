@@ -8,5 +8,15 @@
     "error": null,
     "added_at": "2026-05-03",
     "downloaded_at": "2026-05-03"
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=C4thl7r2MB4",
+    "status": "pending",
+    "title": null,
+    "release_tag": null,
+    "release_url": null,
+    "error": null,
+    "added_at": "2026-05-03",
+    "downloaded_at": null
   }
 ]
