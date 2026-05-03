@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import tempfile
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -33,29 +34,48 @@ def yt_dlp_cmd(url, output_template, playlist):
     )
 
 
-def split_file(path):
-    prefix = str(path) + ".part"
-    run(f'split -b {MAX_PART_BYTES} "{path}" "{prefix}"')
-    parts = sorted(Path(path.parent).glob(path.name + ".part*"))
-    return parts
+def read_info_json(tmpdir):
+    info_jsons = sorted(Path(tmpdir).rglob("*.info.json"))
+    if not info_jsons:
+        return {}
+    try:
+        return json.loads(info_jsons[0].read_text())
+    except Exception:
+        return {}
+
+
+def zip_files(files, zip_path):
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            zf.write(f, f.name)
+    return zip_path
+
+
+def split_and_zip(mp4, tmpdir):
+    prefix = str(mp4) + ".part"
+    run(f'split -b {MAX_PART_BYTES} "{mp4}" "{prefix}"')
+    parts = sorted(Path(tmpdir).glob(mp4.name + ".part*"))
+    zips = []
+    for i, part in enumerate(parts, 1):
+        zip_path = Path(tmpdir) / f"{mp4.stem}.part{i}.zip"
+        zip_files([part], zip_path)
+        zips.append(zip_path)
+    return zips
 
 
 def release_exists(tag):
-    result = run(f'gh release view "{tag}" --repo "{REPO}"')
-    return result.returncode == 0
+    return run(f'gh release view "{tag}" --repo "{REPO}"').returncode == 0
 
 
 def create_or_upload_release(tag, title, notes, files):
     files_str = " ".join(f'"{f}"' for f in files)
+    notes_escaped = notes.replace('"', '\\"')
     if release_exists(tag):
-        result = run(f'gh release upload "{tag}" {files_str} --repo "{REPO}" --clobber')
-    else:
-        notes_escaped = notes.replace('"', '\\"')
-        result = run(
-            f'gh release create "{tag}" {files_str} '
-            f'--repo "{REPO}" --title "{title}" --notes "{notes_escaped}"'
-        )
-    return result
+        return run(f'gh release upload "{tag}" {files_str} --repo "{REPO}" --clobber')
+    return run(
+        f'gh release create "{tag}" {files_str} '
+        f'--repo "{REPO}" --title "{title}" --notes "{notes_escaped}"'
+    )
 
 
 def get_release_url(tag):
@@ -72,10 +92,8 @@ def process_entry(entry, tmpdir):
         else "%(id)s.%(ext)s"
     )
 
-    cmd = yt_dlp_cmd(url, str(Path(tmpdir) / output_template), playlist)
     print(f"Downloading: {url}")
-    result = run(cmd)
-
+    result = run(yt_dlp_cmd(url, str(Path(tmpdir) / output_template), playlist))
     if result.returncode != 0:
         print(f"  ERROR: {result.stderr[-500:]}")
         entry["status"] = "failed"
@@ -88,74 +106,52 @@ def process_entry(entry, tmpdir):
         entry["error"] = "No mp4 files produced by yt-dlp"
         return entry
 
-    # Read title from first info-json if available
-    info_jsons = list(Path(tmpdir).rglob("*.info.json"))
-    title = entry.get("title") or url
-    if info_jsons:
-        try:
-            info = json.loads(info_jsons[0].read_text())
-            title = info.get("title") or info.get("playlist_title") or title
-        except Exception:
-            pass
+    info = read_info_json(tmpdir)
+    title = info.get("title") or info.get("playlist_title") or url
 
     if playlist:
-        tag = f"yt-playlist-{Path(tmpdir).name}"
-        # Try to get playlist id from info json
-        if info_jsons:
-            try:
-                info = json.loads(info_jsons[0].read_text())
-                pl_id = info.get("playlist_id") or info.get("playlist") or tag
-                tag = f"yt-playlist-{pl_id}"[:100]
-            except Exception:
-                pass
+        pl_id = info.get("playlist_id") or info.get("playlist") or Path(tmpdir).name
+        tag = f"yt-playlist-{pl_id}"[:100]
 
         upload_files = []
         for mp4 in mp4_files:
             if mp4.stat().st_size > MAX_PART_BYTES:
-                parts = split_file(mp4)
-                upload_files.extend(parts)
+                upload_files.extend(split_and_zip(mp4, tmpdir))
             else:
-                upload_files.append(mp4)
+                zip_path = Path(tmpdir) / f"{mp4.stem}.zip"
+                upload_files.append(zip_files([mp4], zip_path))
 
-        notes = f"Source: {url}\nTo reassemble split parts: cat <name>.mp4.part* > <name>.mp4"
-        result = create_or_upload_release(tag, title, notes, upload_files)
-        if result.returncode != 0:
-            entry["status"] = "failed"
-            entry["error"] = result.stderr[-500:].strip()
-            return entry
-
-        entry["status"] = "done"
-        entry["title"] = title
-        entry["release_tag"] = tag
-        entry["release_url"] = get_release_url(tag)
-
+        notes = (
+            f"Source: {url}\n"
+            "Split parts: extract each zip, then: cat <name>.part*.mp4 > <name>.mp4"
+        )
     else:
-        mp4 = mp4_files[0]
-        # Derive video id from filename (yt-dlp names it <id>.mp4)
-        video_id = mp4.stem
+        # Read video id from info.json, not the filename (avoids .f398 suffix)
+        video_id = info.get("id") or mp4_files[0].stem
         tag = f"yt-{video_id}"[:100]
+        mp4 = mp4_files[0]
 
         if mp4.stat().st_size > MAX_PART_BYTES:
-            parts = split_file(mp4)
+            upload_files = split_and_zip(mp4, tmpdir)
             notes = (
                 f"Source: {url}\n"
-                f"To reassemble: cat {mp4.name}.part* > {mp4.name}"
+                f"Split parts: extract each zip, then: cat {mp4.stem}.part*.mp4 > {mp4.name}"
             )
-            result = create_or_upload_release(tag, title, notes, parts)
         else:
+            zip_path = Path(tmpdir) / f"{video_id}.zip"
+            upload_files = [zip_files([mp4], zip_path)]
             notes = f"Source: {url}"
-            result = create_or_upload_release(tag, title, notes, [mp4])
 
-        if result.returncode != 0:
-            entry["status"] = "failed"
-            entry["error"] = result.stderr[-500:].strip()
-            return entry
+    result = create_or_upload_release(tag, title, notes, upload_files)
+    if result.returncode != 0:
+        entry["status"] = "failed"
+        entry["error"] = result.stderr[-500:].strip()
+        return entry
 
-        entry["status"] = "done"
-        entry["title"] = title
-        entry["release_tag"] = tag
-        entry["release_url"] = get_release_url(tag)
-
+    entry["status"] = "done"
+    entry["title"] = title
+    entry["release_tag"] = tag
+    entry["release_url"] = get_release_url(tag)
     entry["downloaded_at"] = date.today().isoformat()
     print(f"  Done: {entry['release_url']}")
     return entry
@@ -172,8 +168,6 @@ def main():
     for entry in pending:
         with tempfile.TemporaryDirectory() as tmpdir:
             process_entry(entry, tmpdir)
-
-        # Write after each video so partial progress survives a failure
         VIDEOS_JSON.write_text(json.dumps(videos, indent=2, ensure_ascii=False) + "\n")
 
     print("All done.")
