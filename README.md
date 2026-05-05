@@ -1,174 +1,127 @@
-# YouTube Downloader
+# دانلودر یوتیوب
 
-Download YouTube videos (and playlists) automatically using GitHub Actions. Videos are stored as zipped release assets — your repository stays small.
-
----
-
-## How it works
-
-1. You add a YouTube URL to `videos.json` with `"status": "pending"`
-2. Push to GitHub
-3. GitHub Actions downloads the video using **yt-dlp** at 720p and uploads it as a `.zip` to a GitHub Release
-4. `videos.json` is automatically updated with the download status and release link
-
-Everything runs on GitHub's servers — no local software needed.
+دانلود خودکار ویدیوهای یوتیوب با استفاده از GitHub Actions. ویدیوها مستقیماً در مخزن ذخیره می‌شوند و لینک دانلود از طریق GitHub Releases در اختیار شما قرار می‌گیرد.
 
 ---
 
-## Setup
+## نحوه کارکرد
 
-### 1. Fork or clone this repo
+۱. به تب **Actions** مخزن خود بروید
+۲. گزینه **YouTube Downloader** را انتخاب کنید
+۳. روی **Run workflow** کلیک کنید
+۴. لینک ویدیو، کیفیت و رمز عبور (اختیاری) را وارد کنید
+۵. GitHub Actions ویدیو را دانلود و در مخزن ذخیره می‌کند
+۶. یک **GitHub Release** با لینک‌های دانلود مستقیم ایجاد می‌شود
 
-Create your own copy of this repository on GitHub.
-
-### 2. Make the repo public *(recommended)*
-
-Go to **Settings → General → Danger Zone → Change visibility → Public**.
-
-> If you keep the repo private, release asset download links will require GitHub login.
-
-### 3. That's it
-
-The workflow uses the built-in `GITHUB_TOKEN` — no extra secrets or configuration needed.
+همه مراحل روی سرورهای GitHub اجرا می‌شود — نیازی به نرم‌افزار محلی نیست.
 
 ---
 
-## Adding a video
+## راه‌اندازی
 
-Open `videos.json` and add an entry:
+### ۱. مخزن را Fork یا Clone کنید
 
-```json
-[
-  {
-    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "status": "pending",
-    "title": null,
-    "release_tag": null,
-    "release_url": null,
-    "error": null,
-    "added_at": "2026-05-03",
-    "downloaded_at": null
-  }
-]
-```
+یک نسخه شخصی از این مخزن در GitHub بسازید.
 
-Only `url`, `status`, and `added_at` are required when adding. The rest are filled in automatically.
+### ۲. مخزن را عمومی کنید *(پیشنهادی)*
 
-Push the change — the workflow starts within seconds.
+مسیر **Settings → General → Danger Zone → Change visibility → Public** را طی کنید.
+
+> اگر مخزن خصوصی باشد، برای دانلود ویدیوها باید وارد GitHub شده باشید.
+
+### ۳. همین! آماده است
+
+این workflow از `GITHUB_TOKEN` داخلی استفاده می‌کند — نیازی به تنظیمات اضافی نیست.
 
 ---
 
-## Adding a playlist
+## دانلود ویدیو
 
-Use a playlist URL exactly the same way:
+۱. به تب **Actions** بروید
+۲. روی **YouTube Downloader** کلیک کنید
+۳. دکمه **Run workflow** را بزنید
+۴. فیلدها را پر کنید:
 
-```json
-{
-  "url": "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxx",
-  "status": "pending",
-  "title": null,
-  "release_tag": null,
-  "release_url": null,
-  "error": null,
-  "added_at": "2026-05-03",
-  "downloaded_at": null
-}
-```
+| فیلد | توضیح |
+|------|-------|
+| **لینک ویدیوی یوتیوب** | آدرس کامل ویدیو یا پلی‌لیست |
+| **کیفیت** | `best`، `1080`، `720`، `480`، یا `audio` (پیش‌فرض: `best`) |
+| **رمز عبور** | رمز عبور برای فایل zip (اختیاری) |
 
-All videos in the playlist are downloaded and bundled into a single release.
+پس از اتمام workflow، به تب **Releases** بروید تا لینک‌های دانلود را ببینید.
 
 ---
 
-## Downloading your video
+## دریافت ویدیو
 
-1. Go to the **Releases** tab of your repository
-2. Find the release named after your video
-3. Download the `.zip` file
-4. Extract it — the `.mp4` is inside
+۱. به تب **Releases** مخزن بروید
+۲. آخرین Release را باز کنید
+۳. لینک‌های دانلود مستقیم فایل‌ها را در توضیحات Release مشاهده کنید
+۴. یا به پوشه `videos/` در مخزن بروید و فایل را مستقیم دانلود کنید
 
-### Large videos (split into parts)
+### ویدیوهای بزرگ (تقسیم‌شده به چند بخش)
 
-If a video exceeds 1.9 GB, it is split into numbered zip files:
+اگر حجم ویدیو بیش از ۹۰ مگابایت باشد، به صورت خودکار به بخش‌های zip تقسیم می‌شود:
 
 ```
-video.part1.zip
-video.part2.zip
-video.part3.zip
+video_name.zip
+video_name.z01
+video_name.z02
 ```
 
-Extract all parts, then reassemble:
-
-```bash
-cat video.part*.mp4 > video.mp4
-```
+برای استخراج:
+۱. **همه فایل‌ها** را دانلود کنید (`.zip` و `.z01`، `.z02`، ...)
+۲. با **7-Zip** یا **WinRAR** فایل `.zip` را باز کنید — تمام بخش‌ها خودکار ترکیب می‌شوند
 
 ---
 
-## Status values
+## کیفیت‌های موجود
 
-| Status | Meaning |
-|---|---|
-| `pending` | Waiting to be downloaded |
-| `done` | Downloaded and uploaded to a release |
-| `failed` | Something went wrong — check the `error` field |
-
----
-
-## Video quality
-
-Videos are downloaded at **720p maximum**. This keeps file sizes manageable and ensures compatibility with GitHub's 1.9 GB per-asset limit.
+| مقدار | توضیح |
+|-------|-------|
+| `best` | بهترین کیفیت موجود (پیش‌فرض) |
+| `1080` | حداکثر ۱۰۸۰p |
+| `720` | حداکثر ۷۲۰p |
+| `480` | حداکثر ۴۸۰p |
+| `audio` | فقط صدا |
 
 ---
 
-## Limits
+## خطای ربات / ورود به حساب یوتیوب
 
-| Limit | Value |
-|---|---|
-| Max quality | 720p |
-| Max file size per release asset | 1.9 GB (split automatically if larger) |
-| GitHub Actions minutes (private repo) | 2,000 / month free |
-| GitHub Actions minutes (public repo) | Unlimited free |
+اگر دانلود با خطای *"Sign in to confirm you're not a bot"* ناموفق بود، یوتیوب درخواست را مسدود کرده. با وارد کردن کوکی‌های مرورگر خود این مشکل را برطرف کنید.
 
----
+### مرحله ۱ — استخراج کوکی‌ها
 
-## YouTube bot / sign-in error
+افزونه **Get cookies.txt LOCALLY** را نصب کنید ([Chrome](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) / [Firefox](https://addons.mozilla.org/firefox/addon/cookies-txt/)).
 
-If a video fails with *"Sign in to confirm you're not a bot"*, YouTube is blocking the download. Fix it by providing your YouTube cookies as a secret.
+۱. در مرورگر خود وارد [youtube.com](https://youtube.com) شوید
+۲. روی آیکون افزونه در صفحه یوتیوب کلیک کنید
+۳. کوکی‌ها را با فرمت **Netscape** خروجی بگیرید
 
-### Step 1 — Export your cookies
+### مرحله ۲ — افزودن به GitHub Secrets
 
-Install the **Get cookies.txt LOCALLY** browser extension ([Chrome](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) / [Firefox](https://addons.mozilla.org/firefox/addon/cookies-txt/)).
+۱. مسیر **Settings → Secrets and variables → Actions** را در مخزن باز کنید
+۲. روی **New repository secret** کلیک کنید
+۳. نام: `YOUTUBE_COOKIES`
+۴. مقدار: محتوای کامل فایل `.txt` را paste کنید
+۵. **Add secret** را بزنید
 
-1. Log in to [youtube.com](https://youtube.com) in your browser
-2. Click the extension icon while on youtube.com
-3. Export cookies in **Netscape format** — you'll get a `.txt` file
-
-### Step 2 — Add as a GitHub secret
-
-1. Go to your repo → **Settings → Secrets and variables → Actions**
-2. Click **New repository secret**
-3. Name: `YOUTUBE_COOKIES`
-4. Value: paste the entire contents of the `.txt` file
-5. Click **Add secret**
-
-### Step 3 — Re-set the failed entry to pending
-
-In `videos.json`, change `"status": "failed"` back to `"status": "pending"` and push.
-
-> **Security note:** cookies give access to your YouTube account. Never commit them to the repo — the GitHub secret is the safe way to store them.
+> **نکته امنیتی:** کوکی‌ها به حساب یوتیوب شما دسترسی می‌دهند. هرگز آن‌ها را مستقیماً در مخزن ذخیره نکنید.
 
 ---
 
-## Troubleshooting
+## عیب‌یابی
 
-**The workflow didn't trigger**
-- Make sure you edited and pushed `videos.json` (the workflow only triggers on changes to that file)
-- Check the **Actions** tab to see if a run is in progress or failed
+**Workflow اجرا نشد**
+- به تب **Actions** بروید و بررسی کنید آیا run در صف انتظار یا در حال اجرا است
+- مطمئن شوید مجوزهای لازم را دارید
 
-**Status is `failed`**
-- Open `videos.json` and read the `error` field for the reason
-- Common causes: private/deleted video, geo-blocked content, or an unsupported URL
+**دانلود ناموفق بود**
+- Workflow به طور خودکار ۶ روش مختلف دانلود را امتحان می‌کند
+- اگر همه روش‌ها ناموفق بودند، ویدیو ممکن است خصوصی، حذف‌شده یا geo-blocked باشد
+- از کوکی‌های یوتیوب برای ویدیوهای با محدودیت استفاده کنید
 
-**Download link doesn't work**
-- If the repo is private, you must be logged into GitHub to download release assets
-- Make the repo public to get direct shareable download links
+**لینک دانلود کار نمی‌کند**
+- اگر مخزن خصوصی است، باید وارد GitHub شده باشید
+- مخزن را عمومی کنید تا لینک‌های دانلود مستقیم داشته باشید
